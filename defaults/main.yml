@@ -1,0 +1,21 @@
+---
+### Install variables
+container_traefik_user: root
+container_traefik_group: root
+container_traefik_config_dir: "/data/config/traefik"
+container_traefik_log_dir: "/data/log/traefik"
+container_traefik_network: "bridge"
+container_traefik_container_type: "local"
+container_traefik_url: "traefik.exemple.com"
+container_traefik_api_exposed_port: "8080"
+
+container_traefik_provider: docker
+
+### LE variables
+container_traefik_acme_email: test@exemple.com
+container_traefik_acme_domain: exemple.com
+container_traefik_acme_provider: ovh
+container_traefik_acme_ovh_endpoint: ovh-eu
+container_traefik_acme_ovh_appkey: xxxxxxxxxxxxxxxxxxx
+container_traefik_acme_ovh_appsecret: aaaaaaaaaaaaaaaaaaaaaaaaaaa
+container_traefik_acme_ovh_consumerkey: bbbbbbbbbbbbbbbbbbbbbbbbbbbbbb

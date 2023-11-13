@@ -1,0 +1,126 @@
+---
+- name: Ensure docker is installed
+  ansible.builtin.package:
+    name: "{{ container_docker_pkg }}"
+    state: present
+
+- name: Ensures traefik dir exists
+  ansible.builtin.file:
+    path: "{{ item }}"
+    state: directory
+    mode: 0755
+    owner: "{{ container_traefik_user }}"
+    group: "{{ container_traefik_group }}"
+  with_items:
+    - "{{ container_traefik_config_dir }}"
+    - "{{ container_traefik_log_dir }}"
+
+- name: Ensures acme.json file exists
+  ansible.builtin.copy:
+    content: ""
+    dest: "{{ container_traefik_config_dir }}/acme.json"
+    force: false
+    mode: 0600
+
+- name: Adding traefik.yml file
+  ansible.builtin.template:
+    src: "traefik.yml.j2"
+    dest: "{{ container_traefik_config_dir }}/traefik.yml"
+    mode: 0600
+
+- name: "Deploy container"
+  when: container_traefik_container_type == "local"
+  block:
+    - name: Create the web network
+      community.docker.docker_network:
+        name: "{{ container_traefik_network }}"
+
+    - name: create traefik container
+      community.docker.docker_container:
+        name: traefik
+        image: traefik:latest
+        pull: true
+        restart_policy: always
+        ports:
+          - "80:80"
+          - "443:443"
+          - "{{ container_traefik_api_exposed_port }}:8080" #api
+        volumes:
+          - "/etc/timezone:/etc/timezone:ro"
+          - "/etc/localtime:/etc/localtime:ro"
+          - "/var/run/docker.sock:/var/run/docker.sock"
+          - "{{ container_traefik_config_dir }}/traefik.yml:/etc/traefik/traefik.yml"
+          - "{{ container_traefik_config_dir }}/acme.json:/etc/traefik/acme.json"
+          - "{{ container_traefik_log_dir }}:/var/log/traefik"
+        env:
+          EMAIL: "{{ container_traefik_acme_email }}"
+          OVH_ENDPOINT: "{{ container_traefik_acme_ovh_endpoint }}"
+          OVH_APPLICATION_KEY: "{{ container_traefik_acme_ovh_appkey }}"
+          OVH_APPLICATION_SECRET: "{{ container_traefik_acme_ovh_appsecret }}"
+          OVH_CONSUMER_KEY: "{{ container_traefik_acme_ovh_consumerkey }}"
+          ### For ConsulCatalog Provider
+          SERVICE_TAGS: "endpoint,traefik.enable=true,traefik.http.routers.traefik.rule=Host(`{{ container_traefik_url }}`),traefik.http.services.traefik.loadbalancer.server.port={{ container_traefik_api_exposed_port }}"
+        ### For Docker Provider
+        labels:
+          traefik.enable: "true"
+          traefik.http.routers.traefik.rule: "Host(`{{ container_traefik_url }}`)"
+          traefik.http.services.traefik.loadbalancer.server.port: "{{ container_traefik_api_exposed_port }}"
+        networks:
+          - name: "{{ container_traefik_network }}"
+
+
+- name: "Swarm container tasks"
+  when: container_traefik_container_type == "swarm"
+  block:
+    - name: "Launch traefik container service"
+      community.docker.docker_swarm_service:
+        name: "{{ container_traefik_name }}"
+        image: traefik:latest
+        restart_config:
+          condition: on-failure
+          delay: 2s
+          max_attempts: 3
+        publish:
+          - published_port: "80"
+            target_port: 80
+            protocol: tcp
+          - published_port: "{{ container_traefik_api_exposed_port }}"
+            target_port: 8080
+            protocol: tcp
+          - published_port: "443"
+            target_port: 443
+            protocol: tcp
+        mounts:
+          - source: "/etc/timezone"
+            target: "/etc/timezone:ro"
+            readonly: true
+          - source: "/etc/localtime"
+            target: "/etc/localtime:ro"
+            readonly: true
+          - source: "{{ container_traefik_config_dir }}/traefik.yml"
+            target: "/etc/traefik/traefik.yml"
+            type: bind
+          - source: "{{ container_traefik_config_dir }}/acme.json"
+            target: "/etc/traefik/acme.json"
+            type: bind
+          - source: "{{ container_traefik_log_dir }}"
+            target: "/var/log/traefik"
+            type: bind
+        env:
+          EMAIL: "{{ container_traefik_acme_email }}"
+          OVH_ENDPOINT: "{{ container_traefik_acme_ovh_endpoint }}"
+          OVH_APPLICATION_KEY: "{{ container_traefik_acme_ovh_appkey }}"
+          OVH_APPLICATION_SECRET: "{{ container_traefik_acme_ovh_appsecret }}"
+          OVH_CONSUMER_KEY: "{{ container_traefik_acme_ovh_consumerkey }}"
+          ### For ConsulCatalog Provider
+          SERVICE_TAGS: "endpoint,traefik.enable=true,traefik.http.routers.traefik.rule=Host(`{{ container_traefik_url }}`),traefik.http.services.traefik.loadbalancer.server.port={{ container_traefik_api_exposed_port }}"
+        ### For Docker Provider
+        labels:
+          traefik.enable: "true"
+          traefik.http.routers.traefik.rule: "Host(`{{ container_traefik_url }}`)"
+          traefik.http.services.traefik.loadbalancer.server.port: "{{ container_traefik_api_exposed_port }}"
+        placement:
+          constraints:
+            - node.role == manager
+        networks:
+          - name: "{{ container_traefik_network }}"

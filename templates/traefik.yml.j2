@@ -1,0 +1,68 @@
+global:
+  checkNewVersion: false
+  sendAnonymousUsage: false
+
+log:
+  filePath: "/var/log/traefik/traefik.log"
+  level: DEBUG
+
+accessLog:
+  filePath: "/var/log/traefik/traefik_access.log"
+
+metrics:
+  prometheus:
+    entryPoint: metrics
+
+api:
+  dashboard: true
+  insecure: true
+
+entryPoints:
+  metrics:
+    address: :8082
+  web:
+    address: :80
+    http:
+      redirections:
+        entryPoint:
+          to: websecure
+          scheme: https
+  websecure:
+    address: :443
+    http:
+      tls:
+        certResolver: le
+        domains:
+          - main: "{{ container_traefik_acme_domain }}"
+            sans:
+              - "*.{{ container_traefik_acme_domain }}"
+
+certificatesResolvers:
+  le:
+    acme:
+      email: "{{ container_traefik_acme_email }}"
+      storage: /etc/traefik/acme.json
+      dnsChallenge:
+        provider: "{{ container_traefik_acme_provider }}"
+        delayBeforeCheck: 5
+        resolvers:
+          - 1.1.1.1:53
+          - 8.8.8.8:53
+
+{% if container_traefik_provider is defined %}
+providers:
+{% if "docker" in container_traefik_provider %}
+  docker:
+    network: {{ container_traefik_network }}
+    exposedByDefault: false
+    watch: true
+{% endif %}
+{% if "consulcatalog" in container_traefik_provider %}
+  consulCatalog:
+    prefix: traefik
+    exposedByDefault: false
+    constraints: Tag(`endpoint`) 
+    endpoint:
+      address: 192.168.49.100:8500
+{% endif %}
+{% endif %}
